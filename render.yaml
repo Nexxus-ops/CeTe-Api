@@ -19,10 +19,8 @@ services:
       - key: Jwt__Key
         generateValue: true
       - key: Cors__Origins
-        value: https://nexxus-ops.github.io
+        value: https://nexxus-ops.github.io,https://cete-web-av2.onrender.com
 databases:
   - name: cete-postgres-av2
-    databaseName: cete
-    user: cete
     plan: free
     region: oregon

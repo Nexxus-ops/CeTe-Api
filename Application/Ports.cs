@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using CeTe.Domain;
 
 namespace CeTe.Application;
+
 public interface ICeTeRepository
 {
     Task<List<T>> List<T>(Expression<Func<T, bool>>? predicate = null) where T : Entity;
@@ -10,7 +11,21 @@ public interface ICeTeRepository
     Task Save();
     Task<T> Transaction<T>(Func<Task<T>> action);
 }
-public interface ICurrentUser { Guid TenantId { get; } Guid UserId { get; } string Username { get; } }
+public interface ICurrentUser
+{
+    Guid TenantId
+    {
+        get;
+    }
+    Guid UserId
+    {
+        get;
+    }
+    string Username
+    {
+        get;
+    }
+}
 public record InventoryInput(string Sku, string Name, decimal Quantity, decimal UnitPrice, Guid? WarehouseId = null, decimal MinimumStock = 10);
 public record SaleItemInput(Guid InventoryItemId, decimal Quantity);
 public record SaleInput(Guid Id, string CustomerName, List<SaleItemInput> Items, string PaymentMethod = "CASH", Guid? WarehouseId = null);

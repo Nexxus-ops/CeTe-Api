@@ -4,7 +4,7 @@ API propia de C# / ASP.NET Core 10, Entity Framework Core y PostgreSQL 17. Arqui
 
 ## Ejecutar con Docker
 
-Desde la carpeta superior `av2`, ejecutar `./Initialize-Local.ps1` una sola vez: crea `.env` con secretos aleatorios locales y no los muestra. Después, desde este repositorio:
+Desde este repositorio, ejecutar `./Initialize-Local.ps1` una sola vez: crea `.env` con secretos aleatorios locales y no los muestra. Después:
 
 ```powershell
 docker compose up -d --build

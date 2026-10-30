@@ -2,7 +2,7 @@ namespace CeTe.Infrastructure;
 
 public static class ErrorLanguage
 {
-    private static readonly Dictionary<string,string> Spanish = new()
+    private static readonly Dictionary<string, string> Spanish = new()
     {
         ["Resource not found."] = "No se encontró el recurso.",
         ["Warehouse not found."] = "No se encontró el almacén.",
