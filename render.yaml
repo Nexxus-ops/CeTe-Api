@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: cete-api-av2
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_HTTP_PORTS
+        value: "10000"
+      - key: Database__Initialize
+        value: "true"
+      - key: ConnectionStrings__CeTe
+        fromDatabase:
+          name: cete-postgres-av2
+          property: connectionString
+      - key: Jwt__Key
+        generateValue: true
+      - key: Cors__Origins
+        value: https://nexxus-ops.github.io
+databases:
+  - name: cete-postgres-av2
+    databaseName: cete
+    user: cete
+    plan: free
+    region: oregon

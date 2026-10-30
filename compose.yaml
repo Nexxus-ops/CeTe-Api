@@ -1,0 +1,30 @@
+name: cete-av2
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Initialize .env first}
+      POSTGRES_USER: ${POSTGRES_USER:?Initialize .env first}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Initialize .env first}
+    volumes:
+      - cete-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+  api:
+    build: .
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__CeTe: Host=postgres;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      Jwt__Key: ${JWT_KEY:?Initialize .env first}
+      Database__Initialize: "true"
+      Cors__Origins: ${CORS_ORIGINS:-http://localhost:5173}
+    ports:
+      - "127.0.0.1:5080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+volumes:
+  cete-data:
