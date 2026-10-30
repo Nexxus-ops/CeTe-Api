@@ -13,9 +13,10 @@
 
 ## Sobre el Proyecto
 
-Este repositorio contiene el **RESTful API de CeTe**, una plataforma SaaS B2B desarrollada por el equipo **Nexxus** para centralizar las operaciones logísticas de las MYPES peruanas.
+Este repositorio contiene "el **RESTful API de CeTe**", una plataforma SaaS B2B desarrollada por el equipo **Nexxus** para centralizar las operaciones logísticas de las MYPES peruanas.
 
-La API proporciona autenticación, reglas de negocio y persistencia para inventario, abastecimiento, ventas, boletas y despachos. El incremento AV2 utiliza **C# con ASP.NET Core, Entity Framework Core y PostgreSQL**, con ejecución local y publicación mediante Docker.
+La API proporciona autenticación, reglas de negocio y persistencia para inventario, abastecimiento, ventas, boletas y despachos. 
+El incremento AV2 utiliza **C# con ASP.NET Core, Entity Framework Core y PostgreSQL**, con ejecución local y publicación mediante Docker.
 
 **Documentación pública:** [CeTe API - Swagger](https://cete-api-av2.onrender.com/swagger).
 **Estado del servicio:** [CeTe API - Health](https://cete-api-av2.onrender.com/health).
