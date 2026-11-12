@@ -28,7 +28,7 @@ El incremento AV2 utiliza **C# con ASP.NET Core, Entity Framework Core y Postgre
 * **Inventario con Trazabilidad:** Catálogo, SKU único por empresa, stock por almacén, entradas, salidas y movimientos auditables.
 * **Compras y Recepción Parcial:** Órdenes a proveedores y registro de entregas físicas, con control del saldo pendiente y actualización de stock al recibir.
 * **Ventas Atómicas:** Confirmación conjunta de venta, detalle, stock, pago registrado y boleta, con precios y totales calculados en el servidor.
-* **Control de Reintentos y Concurrencia:** UUID idempotente para evitar operaciones duplicadas y transacciones serializables para proteger la última unidad disponible.
+* **Control de Reintentos y Concurrencia:** UUID idempotente para evitar ventas duplicadas y transacciones serializables para proteger la última unidad disponible.
 * **Boletas Históricas:** Comprobante académico persistente con empresa, dirección, orden, fecha y hora, vendedor, cliente, productos, cantidades, precios y total.
 * **Anulación de Ventas:** Reposición de stock una sola vez y reversión del pago registrado, con validación de ventas asociadas a despachos.
 * **Coordinación de Despachos:** Asociación exclusiva de ventas, validación de recursos ocupados, transiciones de estado e incidencias.
@@ -48,35 +48,66 @@ El incremento AV2 utiliza **C# con ASP.NET Core, Entity Framework Core y Postgre
 
 ## Arquitectura y Estructura del Proyecto
 
-La implementación organiza las responsabilidades siguiendo principios de **Domain-Driven Design (DDD)** y **Arquitectura Hexagonal**: entidades e invariantes de dominio, casos de uso y puertos, y adaptadores de infraestructura.
+El backend se organiza como un monolito modular con cinco contextos de negocio activos. Cada contexto contiene sus modelos, contratos, casos de uso y adaptadores HTTP y de persistencia.
+
+| Contexto | Responsabilidad |
+| :--- | :--- |
+| **Inventory** | Productos, SKU, almacenes, saldos y movimientos. |
+| **Procurement** | Proveedores, órdenes de compra y recepciones parciales. |
+| **Sales** | Confirmación y anulación de ventas, pagos registrados y boletas históricas. |
+| **Logistics** | Asignación de ventas, exclusividad de recursos, estados e incidencias. |
+| **Identity** | Empresas, usuarios, credenciales y sesiones. |
+
+Reporting es una proyección de lectura transversal. Integrations contiene el adaptador de tipo de cambio. Subscriptions y Notifications conservan los modelos previstos por el esquema para desarrollos posteriores.
 
 ```text
 CeTe-Api/
-  .github/
-    workflows/
-      checks.yml                 # Compilación y comprobaciones de dominio
-  Domain/
-    Entities.cs                  # Entidades e invariantes del negocio
-  Application/
-    Ports.cs                     # Puertos y contratos de entrada
-    Operations.cs                # Casos de uso y operaciones transaccionales
-  Infrastructure/
-    Authentication.cs            # Registro, credenciales y sesiones
-    CeTeDb.cs                    # EF Core, filtros, relaciones y transacciones
-    ErrorLanguage.cs             # Mensajes de negocio en inglés y español
+  Inventory/                     # La misma estructura se repite por contexto
+    Domain/
+      Model/
+        Aggregates/              # Modelos y reglas de negocio
+        Commands/                # Intenciones de modificación
+        Queries/                 # Solicitudes de lectura
+        ValueObjects/            # SKU validado
+      Repositories/              # Contrato de inventario
+    Application/
+      Internal/CommandServices/  # Casos de uso que modifican estado
+      Internal/QueryServices/    # Consultas
+      Services/                  # Contratos y fachada entre contextos
+      Results/                   # Proyecciones tipadas
+    Infrastructure/
+      Persistence/EFC/Repositories/
+    Interfaces/
+      REST/
+        Resources/               # Solicitudes HTTP
+        Transform/               # Conversión de recursos a comandos
+  Procurement/
+  Sales/
+  Logistics/
+  Identity/
+  Reporting/
+  Integrations/
+  Shared/
+    Domain/                      # Identidad base, reglas y unidad de trabajo
+    Application/                 # Contrato del usuario actual
+    Infrastructure/              # DbContext y mecánica de persistencia
+    Interfaces/REST/             # Traducción de errores y middleware
   tests/
-    Domain/                      # Comprobaciones de invariantes
-    api_smoke.py                 # Pruebas HTTP contra la API real
-  Program.cs                     # Configuración y endpoints
-  Dockerfile                     # Compilación y ejecución del contenedor
-  compose.yaml                   # API y PostgreSQL para desarrollo local
-  render.yaml                    # Configuración de infraestructura en Render
-  schema.sql                     # Exportación del esquema físico
-  Initialize-Local.ps1            # Creación del entorno local
-  .env.example                   # Referencia de configuración
+    Domain/                      # Invariantes y compatibilidad del modelo
+    api_smoke.py                 # Aceptación HTTP
+  Program.cs                     # Configuración, DI y pipeline HTTP
+  Dockerfile
+  compose.yaml
+  schema.sql
 ```
 
-### Modelo de Datos y Alcance
+Los contratos de repositorio restringen el acceso a las entidades de cada contexto. Las interacciones entre contextos pasan por fachadas o contratos de aplicación. Por ejemplo, Ventas solicita un ajuste a Inventario y Logística consulta la elegibilidad de una venta. La unidad de trabajo comparte un DbContext y mantiene atómicas las operaciones que abarcan varios contextos.
+
+Los agregados de venta, recepción e inventario encapsulan las reglas de confirmación, cantidades y estados. Los objetos de valor validan SKU e importes. Los controladores conservan las rutas y formas JSON que consume el frontend.
+
+El [ejemplo Catch-Up del curso](https://github.com/upc-pre-202620-1asi0730-ahsp/catch-up-platform-deploy) sirve como referencia de organización de capas, comandos, consultas, repositorios y transformadores.
+
+## Modelo de Datos y Alcance
 
 El archivo `schema.sql` documenta **35 tablas físicas**, con relaciones, claves e índices para identidad, inventario, abastecimiento, ventas, logística, devoluciones y notificaciones.
 
@@ -156,7 +187,7 @@ dotnet run --project tests/Domain/DomainChecks.csproj
 
 Las pruebas HTTP crean empresas ficticias y comprueban autenticación, permisos, aislamiento, recepción parcial, rollback, idempotencia, conservación de boletas, anulación, revocación, concurrencia, despachos y la integración externa.
 
-Las comprobaciones de dominio validan stock, redondeo monetario, anulación y transiciones. El repositorio del frontend incluye además el comando `npm run test:e2e` para comprobar el recorrido desde la interfaz.
+Las comprobaciones de dominio validan stock, redondeo monetario, anulación, transiciones, recepciones, objetos de valor y la compatibilidad de las 35 tablas y sus 67 claves foráneas con el esquema anterior. El repositorio del frontend incluye además el comando `npm run test:e2e` para comprobar el recorrido desde la interfaz.
 
 Las pruebas deben ejecutarse en un entorno de demostración. Las credenciales temporales se generan en memoria.
 

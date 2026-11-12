@@ -1,9 +1,8 @@
-using System.Security.Claims;
+using CeTe.Shared.Application.Services;
 using System.Text;
 using System.Threading.RateLimiting;
-using CeTe.Application;
-using CeTe.Domain;
-using CeTe.Infrastructure;
+using CeTe.Shared.Interfaces.REST;
+using CeTe.Shared.Infrastructure.Persistence.EFC.Configuration;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.DataProtection;
@@ -25,12 +24,39 @@ if (string.IsNullOrWhiteSpace(connection)) throw new InvalidOperationException("
 var key = builder.Configuration["Jwt:Key"];
 if (string.IsNullOrWhiteSpace(key) || key.Length < 32) throw new InvalidOperationException("Configure a random Jwt__Key of at least 32 characters in the local .env.");
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+builder.Services.AddScoped<ICurrentUser, CeTe.Identity.Infrastructure.Authentication.CurrentUser>();
 builder.Services.AddDataProtection().UseEphemeralDataProtectionProvider();
 builder.Services.AddDbContext<CeTeDb>(options => { if (sqlite) options.UseSqlite(connection); else options.UseNpgsql(connection); });
-builder.Services.AddScoped<ICeTeRepository>(s => s.GetRequiredService<CeTeDb>());
-builder.Services.AddScoped<Operations>();
-builder.Services.AddScoped<Authentication>();
+builder.Services.AddScoped<CeTe.Shared.Domain.Repositories.IUnitOfWork>(services => services.GetRequiredService<CeTeDb>());
+builder.Services.AddScoped<CeTe.Inventory.Application.Services.IInventoryFacade, CeTe.Inventory.Application.Internal.InventoryFacade>();
+builder.Services.AddScoped<CeTe.Inventory.Domain.Repositories.IInventoryRepository, CeTe.Inventory.Infrastructure.Persistence.EFC.Repositories.InventoryRepository>();
+builder.Services.AddScoped<CeTe.Sales.Domain.Repositories.ISalesRepository, CeTe.Sales.Infrastructure.Persistence.EFC.Repositories.SalesRepository>();
+builder.Services.AddScoped<CeTe.Procurement.Domain.Repositories.IProcurementRepository, CeTe.Procurement.Infrastructure.Persistence.EFC.Repositories.ProcurementRepository>();
+builder.Services.AddScoped<CeTe.Logistics.Domain.Repositories.ILogisticsRepository, CeTe.Logistics.Infrastructure.Persistence.EFC.Repositories.LogisticsRepository>();
+builder.Services.AddScoped<CeTe.Inventory.Application.Services.IInventoryCommandService, CeTe.Inventory.Application.Internal.CommandServices.InventoryCommandService>();
+builder.Services.AddScoped<CeTe.Inventory.Application.Services.IInventoryQueryService, CeTe.Inventory.Application.Internal.QueryServices.InventoryQueryService>();
+builder.Services.AddScoped<CeTe.Sales.Application.Services.ISalesCommandService, CeTe.Sales.Application.Internal.CommandServices.SalesCommandService>();
+builder.Services.AddScoped<CeTe.Sales.Application.Services.ISalesQueryService, CeTe.Sales.Application.Internal.QueryServices.SalesQueryService>();
+builder.Services.AddScoped<CeTe.Procurement.Application.Services.IProcurementCommandService, CeTe.Procurement.Application.Internal.CommandServices.ProcurementCommandService>();
+builder.Services.AddScoped<CeTe.Procurement.Application.Services.IProcurementQueryService, CeTe.Procurement.Application.Internal.QueryServices.ProcurementQueryService>();
+builder.Services.AddScoped<CeTe.Logistics.Application.Services.ILogisticsCommandService, CeTe.Logistics.Application.Internal.CommandServices.LogisticsCommandService>();
+builder.Services.AddScoped<CeTe.Logistics.Application.Services.ILogisticsQueryService, CeTe.Logistics.Application.Internal.QueryServices.LogisticsQueryService>();
+builder.Services.AddScoped<CeTe.Sales.Application.Services.ISaleDispatchPolicy, CeTe.Logistics.Infrastructure.ACL.SaleDispatchPolicy>();
+builder.Services.AddScoped<CeTe.Identity.Application.Services.ICompanyQueryService, CeTe.Identity.Infrastructure.Persistence.EFC.CompanyQueryService>();
+builder.Services.AddScoped<CeTe.Identity.Domain.Repositories.IIdentityRepository, CeTe.Identity.Infrastructure.Persistence.EFC.Repositories.IdentityRepository>();
+builder.Services.AddScoped<CeTe.Identity.Application.Services.IIdentityCommandService, CeTe.Identity.Application.Internal.CommandServices.IdentityCommandService>();
+builder.Services.AddScoped<CeTe.Identity.Application.Services.IIdentityQueryService, CeTe.Identity.Application.Internal.QueryServices.IdentityQueryService>();
+builder.Services.AddScoped<CeTe.Identity.Application.Services.IPasswordService, CeTe.Identity.Infrastructure.Authentication.PasswordService>();
+builder.Services.AddScoped<CeTe.Identity.Application.Services.ITokenService, CeTe.Identity.Infrastructure.Authentication.TokenService>();
+builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
+{
+    options.InvalidModelStateResponseFactory = context => new Microsoft.AspNetCore.Mvc.UnprocessableEntityObjectResult(
+        new
+        {
+            message = "Invalid request."
+        });
+});
+builder.Services.AddScoped<CeTe.Reporting.Application.Services.IReportingQueryService, CeTe.Reporting.Infrastructure.Persistence.EFC.ReportingQueryService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -44,11 +70,11 @@ builder.Services.AddRateLimiter(options => options.AddPolicy("auth", context => 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters { ValidateIssuer = true, ValidateAudience = true, ValidateIssuerSigningKey = true, ValidateLifetime = true, ValidIssuer = "CeTe", ValidAudience = "CeTe", IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), ClockSkew = TimeSpan.Zero };
-    options.Events = new JwtBearerEvents { OnTokenValidated = async context => { var principal = context.Principal!; if (!Guid.TryParse(principal.FindFirst("jti")?.Value, out var sessionId) || !Guid.TryParse(principal.FindFirst("tenant_id")?.Value, out var tenantId)) { context.Fail("Invalid session."); return; } var db = context.HttpContext.RequestServices.GetRequiredService<CeTeDb>(); var session = await db.Set<UserSession>().IgnoreQueryFilters().SingleOrDefaultAsync(s => s.Id == sessionId && s.TenantId == tenantId); if (session == null || session.Revoked || session.ExpiresAt <= DateTimeOffset.UtcNow) context.Fail("Session expired."); } };
+    options.Events = new JwtBearerEvents { OnTokenValidated = CeTe.Identity.Infrastructure.Authentication.SessionValidator.Validate };
 });
 builder.Services.AddAuthorization();
 var app = builder.Build();
-app.Use(async (context, next) => { try { await next(); } catch (BusinessException e) { context.Response.StatusCode = e.Status; await context.Response.WriteAsJsonAsync(new { message = ErrorLanguage.Translate(e.Message, context) }); } catch (Exception e) when (IsConcurrencyConflict(e)) { context.Response.StatusCode = 409; await context.Response.WriteAsJsonAsync(new { message = ErrorLanguage.Translate("Concurrent operation. Refresh and retry.", context) }); } catch (DbUpdateException) { context.Response.StatusCode = 409; await context.Response.WriteAsJsonAsync(new { message = ErrorLanguage.Translate("The operation conflicts with current data. Refresh and retry.", context) }); } catch (Exception e) when (e is not OperationCanceledException) { app.Logger.LogError(e, "Request failed"); context.Response.StatusCode = 500; await context.Response.WriteAsJsonAsync(new { message = ErrorLanguage.Translate("The operation could not be completed.", context) }); } });
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseCors();
 app.UseRateLimiter();
 app.UseAuthentication();
@@ -58,40 +84,5 @@ app.UseSwaggerUI();
 if (builder.Configuration.GetValue<bool>("Database:Initialize")) { using var scope = app.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<CeTeDb>(); await db.Database.EnsureCreatedAsync(); }
 app.MapGet("/", () => Results.Redirect("/swagger"));
 app.MapGet("/health", async (CeTeDb db) => { var healthy = await db.Database.CanConnectAsync(); return Results.Json(new { status = healthy ? "healthy" : "unavailable", service = "CeTe API", version = "0.2.0" }, statusCode: healthy ? 200 : 503); });
-var auth = app.MapGroup("/api/v1/authentication").WithTags("Identity");
-auth.MapPost("/sign-up", (RegisterInput body, Authentication service) => service.Register(body)).RequireRateLimiting("auth");
-auth.MapPost("/sign-in", (LoginInput body, Authentication service) => service.Login(body)).RequireRateLimiting("auth");
-auth.MapPost("/sign-out", async (ClaimsPrincipal principal, Authentication service) => { await service.Logout(principal); return Results.NoContent(); }).RequireAuthorization();
-var api = app.MapGroup("/api/v1").RequireAuthorization();
-api.MapGet("/inventory", (Operations ops) => ops.Inventory()).WithTags("Inventory");
-api.MapPost("/inventory", (InventoryInput body, Operations ops) => ops.SaveProduct(null, body)).RequireAuthorization(p => p.RequireRole("Admin", "Warehouse")).WithTags("Inventory");
-api.MapPut("/inventory/{id:guid}", (Guid id, InventoryInput body, Operations ops) => ops.SaveProduct(id, body)).RequireAuthorization(p => p.RequireRole("Admin", "Warehouse")).WithTags("Inventory");
-api.MapDelete("/inventory/{id:guid}", (Guid id, Operations ops) => ops.Archive(id)).RequireAuthorization(p => p.RequireRole("Admin")).WithTags("Inventory");
-api.MapPost("/inventory/{id:guid}/entries", (Guid id, MovementInput body, Operations ops) => ops.Move(id, body, true)).RequireAuthorization(p => p.RequireRole("Admin", "Warehouse")).WithTags("Inventory");
-api.MapPost("/inventory/{id:guid}/exits", (Guid id, MovementInput body, Operations ops) => ops.Move(id, body, false)).RequireAuthorization(p => p.RequireRole("Admin", "Warehouse")).WithTags("Inventory");
-api.MapGet("/inventory/{id:guid}/history", (Guid id, Operations ops) => ops.History(id)).WithTags("Inventory");
-api.MapGet("/sales", (Operations ops) => ops.Sales()).WithTags("Sales");
-api.MapPost("/sales", (SaleInput body, Operations ops) => ops.Checkout(body)).RequireAuthorization(p => p.RequireRole("Admin", "Sales")).WithTags("Sales");
-api.MapPatch("/sales/{id:guid}/cancel", (Guid id, Operations ops) => ops.CancelSale(id)).RequireAuthorization(p => p.RequireRole("Admin")).WithTags("Sales");
-api.MapGet("/sales/{id:guid}/receipt", (Guid id, Operations ops) => ops.Receipt(id)).RequireAuthorization(p => p.RequireRole("Admin", "Sales")).WithTags("Sales");
-api.MapGet("/dispatches", (Operations ops) => ops.Dispatches()).WithTags("Logistics");
-api.MapPost("/dispatches", (DispatchInput body, Operations ops) => ops.CreateDispatch(body)).RequireAuthorization(p => p.RequireRole("Admin", "Logistics")).WithTags("Logistics");
-api.MapPut("/dispatches/{id:guid}", (Guid id, StatusInput body, Operations ops) => ops.SetDispatchStatus(id, body.Status)).RequireAuthorization(p => p.RequireRole("Admin", "Logistics")).WithTags("Logistics");
-api.MapPost("/dispatches/{id:guid}/incidents", (Guid id, IncidentInput body, Operations ops) => ops.Incident(id, body.Description)).RequireAuthorization(p => p.RequireRole("Admin", "Logistics")).WithTags("Logistics");
-api.MapGet("/purchases", (Operations ops) => ops.Purchases()).RequireAuthorization(p => p.RequireRole("Admin", "Warehouse")).WithTags("Procurement");
-api.MapPost("/purchases", (PurchaseInput body, Operations ops) => ops.Purchase(body)).RequireAuthorization(p => p.RequireRole("Admin", "Warehouse")).WithTags("Procurement");
-api.MapPost("/purchases/{id:guid}/receive", (Guid id, ReceiveInput body, Operations ops) => ops.Receive(id, body.Quantity)).RequireAuthorization(p => p.RequireRole("Admin", "Warehouse")).WithTags("Procurement");
-api.MapGet("/analytics/dashboard", (Operations ops) => ops.Dashboard()).RequireAuthorization(p => p.RequireRole("Admin")).WithTags("Analytics");
-api.MapGet("/warehouses", (ICeTeRepository repository) => repository.List<Warehouse>()).WithTags("Inventory");
-api.MapGet("/users", async (ICeTeRepository repository) => (await repository.List<User>()).Select(u => new { u.Id, u.Username, u.Role, u.Active })).RequireAuthorization(p => p.RequireRole("Admin")).WithTags("Identity");
-api.MapPost("/users", (EmployeeInput body, Authentication service) => service.Employee(body)).RequireAuthorization(p => p.RequireRole("Admin")).WithTags("Identity");
-api.MapGet("/integrations/exchange-rates", async (IHttpClientFactory factory) => { try { var response = await factory.CreateClient("rates").GetFromJsonAsync<System.Text.Json.JsonElement>("v6/latest/USD"); return Results.Ok(new { source = "ExchangeRate-API", sourceUrl = "https://www.exchangerate-api.com", baseCurrency = "USD", pen = response.GetProperty("rates").GetProperty("PEN").GetDecimal(), updatedAt = response.GetProperty("time_last_update_utc").GetString() }); } catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { return Results.Problem("Exchange rate provider is unavailable.", statusCode: 503); } }).WithTags("Integrations");
+app.MapControllers();
 app.Run();
-
-static bool IsConcurrencyConflict(Exception error)
-{
-    for (Exception? current = error; current != null; current = current.InnerException)
-        if (current is Npgsql.PostgresException { SqlState: "40001" or "40P01" })
-            return true;
-    return false;
-}
