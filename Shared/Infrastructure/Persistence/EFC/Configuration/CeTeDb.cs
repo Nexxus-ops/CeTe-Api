@@ -1,6 +1,7 @@
 using System.Data;
 using System.Reflection;
-using CeTe.Application;
+using CeTe.Shared.Application.Services;
+using CeTe.Shared.Domain.Repositories;
 using CeTe.Shared.Domain.Model;
 using CeTe.Shared.Domain.ValueObjects;
 using CeTe.Identity.Domain.Model.Aggregates;
@@ -12,9 +13,9 @@ using CeTe.Sales.Domain.Model.Aggregates;
 using CeTe.Subscriptions.Domain.Model.Aggregates;
 using Microsoft.EntityFrameworkCore;
 
-namespace CeTe.Infrastructure;
+namespace CeTe.Shared.Infrastructure.Persistence.EFC.Configuration;
 
-public sealed class CeTeDb(DbContextOptions<CeTeDb> options, ICurrentUser current) : DbContext(options), ICeTeRepository
+public sealed class CeTeDb(DbContextOptions<CeTeDb> options, ICurrentUser current) : DbContext(options), IUnitOfWork
 {
     public Guid CurrentTenantId => current.TenantId;
     public static Type[] EntityTypes => typeof(Entity).Assembly.GetTypes().Where(t => !t.IsAbstract && typeof(Entity).IsAssignableFrom(t)).ToArray();
@@ -66,14 +67,6 @@ public sealed class CeTeDb(DbContextOptions<CeTeDb> options, ICurrentUser curren
         model.Entity<Notification>().HasIndex(x => new { x.TenantId, x.EventKey }).IsUnique();
     }
     private void Filter<T>(ModelBuilder model) where T : TenantEntity => model.Entity<T>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
-    public Task<List<T>> List<T>(System.Linq.Expressions.Expression<Func<T, bool>>? predicate = null) where T : Entity => predicate == null ? Set<T>().ToListAsync() : Set<T>().Where(predicate).ToListAsync();
-    public Task<T?> Find<T>(Guid id) where T : Entity => Set<T>().SingleOrDefaultAsync(e => e.Id == id);
-    void ICeTeRepository.Add<T>(T item)
-    {
-        if (item is TenantEntity e && e.TenantId == Guid.Empty)
-            e.TenantId = CurrentTenantId;
-        Set<T>().Add(item);
-    }
     public async Task Save() => await SaveChangesAsync();
     public async Task<T> Transaction<T>(Func<Task<T>> action)
     {

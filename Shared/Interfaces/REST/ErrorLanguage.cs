@@ -1,4 +1,4 @@
-namespace CeTe.Infrastructure;
+namespace CeTe.Shared.Interfaces.REST;
 
 public static class ErrorLanguage
 {

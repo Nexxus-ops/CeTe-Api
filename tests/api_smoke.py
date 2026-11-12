@@ -68,6 +68,8 @@ def run():
     employee_password = secrets.token_urlsafe(20)
     request('POST', '/users', {'username': employee_email, 'password': employee_password, 'role': 'Warehouse'}, token)
     employee = request('POST', '/authentication/sign-in', {'username': employee_email, 'password': employee_password})['token']
+    request('GET', '/dispatches', token=employee)
+    request('POST', '/dispatches', {'driverName': 'Denied', 'licensePlate': 'DENIED', 'saleIds': [sale['id']]}, employee, 403)
     request('POST', '/sales', {**sale, 'id': str(uuid.uuid4())}, employee, 403)
     request('POST', '/authentication/sign-out', {}, employee, 204)
     request('GET', '/inventory', token=employee, expected=401)
