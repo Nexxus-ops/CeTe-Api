@@ -1,5 +1,13 @@
 using System.Linq.Expressions;
-using CeTe.Domain;
+using CeTe.Shared.Domain.Model;
+using CeTe.Shared.Domain.ValueObjects;
+using CeTe.Identity.Domain.Model.Aggregates;
+using CeTe.Inventory.Domain.Model.Aggregates;
+using CeTe.Logistics.Domain.Model.Aggregates;
+using CeTe.Notifications.Domain.Model.Aggregates;
+using CeTe.Procurement.Domain.Model.Aggregates;
+using CeTe.Sales.Domain.Model.Aggregates;
+using CeTe.Subscriptions.Domain.Model.Aggregates;
 
 namespace CeTe.Application;
 
